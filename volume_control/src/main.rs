@@ -12,7 +12,7 @@ enum Change {
     Static(f64),
 }
 
-const MAX_VOLUME: f64 = 2;
+const MAX_VOLUME: f64 = 2.0;
 
 impl Change {
     fn apply(&self, existing_value: f64) -> f64 {
