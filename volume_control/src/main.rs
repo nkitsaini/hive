@@ -4,52 +4,20 @@ use std::{
 };
 
 use anyhow::bail;
+use change::Change;
 use clap::Parser;
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-enum Change {
-    Percent(f64),
-    Static(f64),
-}
+mod change;
 
 const MAX_VOLUME: f64 = 2.0;
-
-impl Change {
-    fn apply(&self, existing_value: f64) -> f64 {
-        match self {
-            Self::Percent(v) => existing_value * v / 100.,
-            Self::Static(v) => existing_value + v,
-        }
-    }
-}
-
-impl FromStr for Change {
-    type Err = anyhow::Error;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let pat = regex::Regex::new(r#"^(?<value>[+-](\d|\.)+)(?<percent>%?)$"#).unwrap();
-        let capture = match pat.captures(s) {
-            Some(x) => x,
-            None => bail!("Can't parse the change: {s}"),
-        };
-        let is_percent = &capture["percent"] != "";
-        let value = f64::from_str(&capture["value"])?;
-
-        if is_percent {
-            Ok(Change::Percent(value))
-        } else {
-            Ok(Change::Static(value))
-        }
-    }
-}
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
-    /// Optional name to operate on
+    /// change in volume (1 means full). like: "+0.5", "-0.5", "+0.5%", "-0.01%"
     #[arg(value_parser = clap::value_parser!(Change))]
     volume_change: Change,
 
-    /// Sets a custom config file
+    /// Set the sink name, default sink by wireplumber is used otherwise
     #[arg(short, long, default_value = "@DEFAULT_AUDIO_SINK@")]
     sink: String,
 }
@@ -97,25 +65,4 @@ fn main() -> anyhow::Result<()> {
     set_volume(&cli.sink, new_volume)?;
     println!("> Done");
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_change_parse() {
-        assert_eq!(Change::from_str("+5").unwrap(), Change::Static(5.));
-        assert_eq!(Change::from_str("+5%").unwrap(), Change::Percent(5.));
-        assert_eq!(Change::from_str("+0.001%").unwrap(), Change::Percent(0.001));
-        assert_eq!(Change::from_str("-5").unwrap(), Change::Static(-5.));
-        assert_eq!(Change::from_str("-5%").unwrap(), Change::Percent(-5.));
-        assert_eq!(
-            Change::from_str("-0.001%").unwrap(),
-            Change::Percent(-0.001)
-        );
-        assert!(Change::from_str("0.001").is_err());
-        assert!(Change::from_str("0.001%").is_err());
-        assert!(Change::from_str("x001%").is_err());
-    }
 }
