@@ -6,7 +6,6 @@ use std::{
 use anyhow::bail;
 use change::Change;
 use clap::Parser;
-use wireplumber::Core;
 mod change;
 
 const MAX_VOLUME: f64 = 2.0;
@@ -47,34 +46,23 @@ fn get_volume(sink: &str) -> anyhow::Result<f64> {
     return Ok(result);
 }
 
-fn main() {
-    Core::init();
-    Core::run(None, |context, mainloop, core| {
-        context.spawn_local(async move {
-            assert!(core.connect());
-            println!("Connected to PipeWire!");
-            mainloop.quit(); // return from Core::run() and disconnect
-        });
-    });
+fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+    println!("Parsed: {:?}", cli.volume_change);
+
+    let current_volume = get_volume(&cli.sink)?;
+    println!("> Current volume: {current_volume}");
+
+    let mut new_volume = cli
+        .volume_change
+        .apply(current_volume)
+        .min(MAX_VOLUME)
+        .max(0.);
+
+    new_volume = (new_volume * 100.).round() / 100.;
+
+    println!("> Setting new volume: {new_volume}");
+    set_volume(&cli.sink, new_volume)?;
+    println!("> Done");
+    Ok(())
 }
-
-// fn main() -> anyhow::Result<()> {
-//     let cli = Cli::parse();
-//     println!("Parsed: {:?}", cli.volume_change);
-
-//     let current_volume = get_volume(&cli.sink)?;
-//     println!("> Current volume: {current_volume}");
-
-//     let mut new_volume = cli
-//         .volume_change
-//         .apply(current_volume)
-//         .min(MAX_VOLUME)
-//         .max(0.);
-
-//     new_volume = (new_volume * 100.).round() / 100.;
-
-//     println!("> Setting new volume: {new_volume}");
-//     // set_volume(&cli.sink, new_volume)?;
-//     println!("> Done");
-//     Ok(())
-// }
