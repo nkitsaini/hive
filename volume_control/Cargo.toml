@@ -7,3 +7,6 @@ edition = "2021"
 anyhow = "1.0.86"
 clap = { version = "4.5.7", features = ["derive"] }
 regex = "1.10.5"
+wireplumber = { version = "0.1", features = ["v0_4_16"], git = "https://github.com/arcnmx/wireplumber.rs" }
+
+
