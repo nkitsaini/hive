@@ -1,14 +1,20 @@
-use std::{
-    process::{Command, Stdio},
-    str::FromStr,
-};
+mod pactl;
+mod volume_control;
+mod wpctl;
+use clap::{Parser, ValueEnum};
+use volume_control::Volume;
 
-use anyhow::bail;
 use change::Change;
-use clap::Parser;
 mod change;
 
 const MAX_VOLUME: f64 = 2.0;
+
+#[derive(ValueEnum, Debug, Clone)] // ArgEnum here
+#[clap(rename_all = "kebab_case")]
+enum VolumeController {
+    Wpctl,
+    Pactl,
+}
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -19,50 +25,62 @@ struct Cli {
 
     /// Set the sink name, default sink by wireplumber is used otherwise
     #[arg(short, long, default_value = "@DEFAULT_AUDIO_SINK@")]
-    sink: String,
-}
+    wpctl_sink: String,
 
-fn set_volume(sink: &str, value: f64) -> anyhow::Result<()> {
-    let result = Command::new("wpctl")
-        .arg("set-volume")
-        .arg(sink)
-        .arg(value.to_string())
-        .status()?;
-    if !result.success() {
-        bail!("Setting volume failed with status code: {result}")
-    }
-    return Ok(());
-}
+    #[arg(short, long, default_value = "@DEFAULT_SINK@")]
+    pactl_sink: String,
 
-fn get_volume(sink: &str) -> anyhow::Result<f64> {
-    let result = Command::new("wpctl")
-        .arg("get-volume")
-        .arg(sink)
-        .stderr(Stdio::inherit())
-        .output()?;
-    let result = String::from_utf8(result.stdout)?;
-    assert!(result.contains("Volume: "));
-    let result = f64::from_str(result.replace("Volume: ", "").trim())?;
-    return Ok(result);
+    /// Tries wpctl than pactl if none is specified
+    #[arg(short, long, default_value = Option::None)]
+    controller: Option<VolumeController>,
 }
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     println!("Parsed: {:?}", cli.volume_change);
 
-    let current_volume = get_volume(&cli.sink)?;
-    println!("> Current volume: {current_volume}");
+    let current_volume: Volume;
+    let controller: VolumeController;
 
-    let mut new_volume = cli
+    match cli.controller {
+        Some(VolumeController::Wpctl) => {
+            controller = VolumeController::Wpctl;
+            current_volume = wpctl::get_volume(&cli.wpctl_sink)?;
+        }
+        Some(VolumeController::Pactl) => {
+            controller = VolumeController::Pactl;
+            current_volume = pactl::get_volume(&cli.pactl_sink)?;
+        }
+        None => {
+            current_volume = match wpctl::get_volume(&cli.wpctl_sink) {
+                Ok(x) => {
+                    controller = VolumeController::Wpctl;
+                    x
+                }
+                Err(_) => {
+                    controller = VolumeController::Pactl;
+                    pactl::get_volume(&cli.pactl_sink)?
+                }
+            };
+        }
+    }
+
+    println!("> Using controller: {controller:?}");
+    println!("> Current volume: {}", current_volume.0);
+
+    let new_volume = cli
         .volume_change
-        .apply(current_volume)
+        .apply(current_volume.0)
         .min(MAX_VOLUME)
         .max(0.);
 
-    new_volume = (new_volume * 100.).round() / 100.;
+    let new_volume = Volume((new_volume * 100.).round() / 100.);
 
-    println!("> Setting new volume: {new_volume}");
-    set_volume(&cli.sink, new_volume)?;
+    println!("> Setting new volume: {}", new_volume.0);
+    match controller {
+        VolumeController::Wpctl => wpctl::set_volume(&cli.wpctl_sink, new_volume)?,
+        VolumeController::Pactl => pactl::set_volume(&cli.pactl_sink, new_volume)?,
+    };
     println!("> Done");
     Ok(())
 }

@@ -11,7 +11,7 @@ pub enum Change {
 impl Change {
     pub fn apply(&self, existing_value: f64) -> f64 {
         match self {
-            Self::Percent(v) => existing_value * v / 100.,
+            Self::Percent(v) => existing_value * (100. + v) / 100.,
             Self::Static(v) => existing_value + v,
         }
     }
